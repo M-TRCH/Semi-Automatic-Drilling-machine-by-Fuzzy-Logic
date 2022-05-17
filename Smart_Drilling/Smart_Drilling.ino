@@ -105,29 +105,47 @@ void setSpd(uint16_t freqIn)
 
 ////////////////////////////////////////////////////////////////////////////////
 /* switch */
-#define limitPin 53 
 #define startPin 52
 #define debounceTime 500
 #define indicatorTime 3000
 void switchInit()
 {
   pinMode(startPin, INPUT_PULLUP);
-  pinMode(limitPin, INPUT_PULLUP);
 }
 void(*resetFunc) (void) = 0;
 
 ////////////////////////////////////////////////////////////////////////////////
 /* procress */
 #include "Fuzzy.h"
+#define gPilotLampPin 8
+#define rPilotLampPin 9 
 #define delayStart    3000
 #define initSpdStart  55
 #define spdStart      28
-#define detectTimeFuzzy 1000
+#define detectTimeFuzzy 2000
 #define detectTimeStop  3000
 #define startTimeFuzzy  2000
-#define detectHighWeight 4.0
-#define detectLowWeight  5.0
+#define detectHighWeight 4.0 // for start
+#define detectLowWeight  1.5 // for stop
 boolean highSpdCase = false; 
+#define minWeightPilotLamp -7 // for green lamp
+#define maxWeightPilotLamp 7  // 
+
+void pilotLampInit()
+{
+  pinMode(gPilotLampPin, OUTPUT);
+  pinMode(rPilotLampPin, OUTPUT);  
+}
+void readyIndicator()
+{
+  digitalWrite(gPilotLampPin, HIGH);
+  digitalWrite(rPilotLampPin,  LOW);
+}
+void unreadyIndicator()
+{
+  digitalWrite(rPilotLampPin, HIGH);
+  digitalWrite(gPilotLampPin,  LOW);  
+}
 ////////////////////////////////////////////////////////////////////////////////
 /* step motor */
 #define pwm1 4
@@ -139,12 +157,12 @@ boolean highSpdCase = false;
 #define ena3 44
 #define ena4 46
 #define stepMotorPwm 255
-#define stepTopSpdPeriod 20
-#define stepBotSpdPeriod 20
+#define stepTopSpdPeriod 30 // เพื่มเเล้วช้าลงท๊อกมากขึ้น
+#define stepBotSpdPeriod 30
 #define DIR_CW 1
 #define DIR_CCW 0
 #define topLimitSwPin 53
-#define botLimitSwPin 50
+#define botLimitSwPin 51
 #define dbTime 5
 boolean table[4][4] =
 {
@@ -243,6 +261,10 @@ void goToBottom()
 void setup() 
 { 
   Serial.begin(9600); 
+  pilotLampInit();
+  unreadyIndicator();
+  
+  setSpd(0);
   
   stepMotorInit();
   goToTop();
@@ -253,7 +275,7 @@ void setup()
   switchInit();
   unsigned long timerPrint = millis(); 
   Serial.print("\nwaiting");
-  for(int count=0; count<2; count++)
+  for(int count=0; count<1; count++)     /////////////ปุ่มเปิดเครื่องเช็ค 3 ครั้ง
   {
     while(true)
     {
@@ -262,7 +284,16 @@ void setup()
         delay(debounceTime);
         if(!digitalRead(startPin))
         {
-          break;
+          delay(debounceTime);
+          if(!digitalRead(startPin))
+          {
+            delay(debounceTime);
+            if(!digitalRead(startPin))
+            {
+             
+              break;
+            }
+          }
         }
       }
       if(millis() - timerPrint > indicatorTime)
@@ -285,15 +316,30 @@ void setup()
   // loadcell alignment
   weightAlign();
   
+  #define timeStop 10000 // #######################
+  unsigned long timerStop = millis();
   while(true)
   {
+    if(millis() - timerStop > timeStop)
+    {
+      resetFunc();
+    }
+    
     float w = getWeightOffset(); 
     float a = getCurrentOffset();
-    if(w > detectHighWeight)  break;
-    delay(detectTimeFuzzy);
+    if(w > detectHighWeight)
+    {
+      if(w > minWeightPilotLamp && w < maxWeightPilotLamp)
+      {
+        readyIndicator();
+      }
+      break;
+    }
+    
     
     Serial.print(a); Serial.print("\t");
     Serial.println(w);
+    delay(detectTimeFuzzy);
   }
   Serial.println("fuzzy start");
   delay(startTimeFuzzy); 
@@ -402,6 +448,7 @@ void loop()
     Serial.println(w);
   }
   
+  unreadyIndicator();
   setSpd(0); // stop
   
   Serial.print("\nSpeed = "); Serial.println(f_spd);  
